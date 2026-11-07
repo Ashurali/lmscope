@@ -46,21 +46,21 @@ class CustomLSTMCell:
 
     @torch.no_grad()
     def run(self, x):
-        """x: (T, input_size). Returns h (T, H), c (T, H) and gates {"input","forget","output"} each (T, H)."""
+        """x: (T, input_size). Returns h (T, H), c (T, H) and {"input","forget","output","cell"} each (T, H)."""
         T, H = x.shape[0], self.hidden_size
         h = x.new_zeros(H)
         c = x.new_zeros(H)
         x_proj = x @ self.w_ih.T + self.b  # input part of all steps at once
-        hs, cs, gi, gf, go = [], [], [], [], []
+        hs, cs, gi, gf, go, gg = [], [], [], [], [], []
         for t in range(T):
             gates = x_proj[t] + self.w_hh @ h
             i, f, g, o = gates.split(H)
             i, f, o, g = torch.sigmoid(i), torch.sigmoid(f), torch.sigmoid(o), torch.tanh(g)
             c = f * c + i * g
             h = o * torch.tanh(c)
-            hs.append(h); cs.append(c); gi.append(i); gf.append(f); go.append(o)
+            hs.append(h); cs.append(c); gi.append(i); gf.append(f); go.append(o); gg.append(g)
         stack = torch.stack
-        return stack(hs), stack(cs), {"input": stack(gi), "forget": stack(gf), "output": stack(go)}
+        return stack(hs), stack(cs), {"input": stack(gi), "forget": stack(gf), "output": stack(go), "cell": stack(gg)}
 
 
 class AttentionSoftmax(nn.Module):

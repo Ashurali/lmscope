@@ -58,6 +58,47 @@ class Inspector:
                 "vocab_size": c["vocab_size"], "context_len": self.context_len,
                 "tokenizer_type": self.tok.kind, "device": str(self.device)}
 
+    def architecture(self):
+        """Static description of the loaded model: hyperparameters, shapes and parameter counts per module,
+        all read from the model itself (parameter counts) and its config (sizes)."""
+        m, c = self.model, self.config
+        n = lambda mod: sum(p.numel() for p in mod.parameters())
+        V, d, total = c["vocab_size"], c["d_model"], count_params(m)
+        out = {"model_type": c["model_type"], "total_params": total, "vocab_size": V, "d_model": d,
+               "n_layers": c["n_layers"], "context_len": self.context_len, "dropout": c.get("dropout"),
+               "tokenizer_type": self.tok.kind}
+        if isinstance(m, CausalTransformer):
+            H = c["n_heads"]
+            blocks = [{"params": n(b), "ln1": n(b.ln1), "ln2": n(b.ln2),
+                       "attn": {"params": n(b.attn), "qkv": n(b.attn.qkv), "proj": n(b.attn.proj)},
+                       "ff": {"params": n(b.ff), "fc1": n(b.ff.net[0]), "fc2": n(b.ff.net[2])}} for b in m.blocks]
+            out.update({"n_heads": H, "d_k": d // H, "d_ff": c["d_ff"], "activation": "GELU",
+                        "norm": "pre-norm LayerNorm", "positions": "learned absolute",
+                        "tok_embed": n(m.tok_embed), "pos_embed": n(m.pos_embed), "blocks": blocks,
+                        "ln_f": n(m.ln_f), "head": n(m.head),
+                        "groups": [["token embedding", n(m.tok_embed)], ["position embedding", n(m.pos_embed)],
+                                   ["attention (Q, K, V, output)", sum(b["attn"]["params"] for b in blocks)],
+                                   ["feed-forward", sum(b["ff"]["params"] for b in blocks)],
+                                   ["LayerNorms", sum(b["ln1"] + b["ln2"] for b in blocks) + n(m.ln_f)],
+                                   ["output head", n(m.head)]]})
+            non_embed = total - n(m.tok_embed) - n(m.pos_embed)
+            out["flops_per_token"] = {"matmul": 2 * non_embed, "attention_per_ctx_token": 4 * c["n_layers"] * d}
+        else:
+            L, Hs = m.lstm, c["hidden_size"]
+            layers = []
+            for l in range(L.num_layers):
+                w_ih, w_hh = getattr(L, f"weight_ih_l{l}"), getattr(L, f"weight_hh_l{l}")
+                b = getattr(L, f"bias_ih_l{l}").numel() + getattr(L, f"bias_hh_l{l}").numel()
+                layers.append({"input_size": w_ih.shape[1], "w_ih": w_ih.numel(), "w_hh": w_hh.numel(), "bias": b,
+                               "params": w_ih.numel() + w_hh.numel() + b})
+            out.update({"hidden_size": Hs, "embed": n(m.embed), "layers": layers, "head": n(m.head),
+                        "gate_order": "input, forget, cell candidate, output",
+                        "groups": [["embedding", n(m.embed)]]
+                                  + [[f"LSTM layer {k + 1}", ly["params"]] for k, ly in enumerate(layers)]
+                                  + [["output head", n(m.head)]]})
+            out["flops_per_token"] = {"matmul": 2 * (total - n(m.embed)), "attention_per_ctx_token": 0}
+        return out
+
     def set_prompt(self, text):
         ids = self.tok.encode(text)
         if not ids:
@@ -114,10 +155,13 @@ class Inspector:
     def _transformer_internals(self, ids, layer, head):
         """One forward pass with hooks: attention of every layer, residual-stream norms per layer."""
         model = self.model
-        attn, norms, hooks = [], [], []
+        attn, norms, hooks, attn_out, ff_out = [], [], [], [], []
         for block in model.blocks:
             hooks.append(block.attn.softmax.register_forward_hook(lambda m, i, o: attn.append(o[0])))
             hooks.append(block.register_forward_hook(lambda m, i, o: norms.append(o[0].norm(dim=-1))))
+            # what each sublayer writes into the residual stream, at the current (last) position
+            hooks.append(block.attn.register_forward_hook(lambda m, i, o: attn_out.append(float(o[0, -1].norm()))))
+            hooks.append(block.ff.register_forward_hook(lambda m, i, o: ff_out.append(float(o[0, -1].norm()))))
         try:
             x = torch.tensor([ids], device=self.device)
             emb = model.tok_embed(x) + model.pos_embed(torch.arange(len(ids), device=self.device))
@@ -131,8 +175,22 @@ class Inspector:
         matrix = a.mean(0) if head == "mean" else a[int(head)]
         # Where each head of this layer looks, for the last query: mean attention distance in tokens.
         T = len(ids)
-        dist = (torch.arange(T, device=a.device).flip(0).float() * a[:, -1, :]).sum(-1)
+        back = torch.arange(T, device=a.device).flip(0).float()  # tokens back from the last query
+        dist = (back * a[:, -1, :]).sum(-1)
+        layer_stats = []
+        for l, al in enumerate(attn):
+            last = al[:, -1, :]  # (heads, T): where each head's current query looks
+            ent = -(last * torch.log2(last.clamp_min(1e-12))).sum(-1)
+            mx, arg = last.max(-1)
+            layer_stats.append({
+                "heads": [{"entropy_bits": round(float(ent[h]), 3), "mean_distance": round(float((back * last[h]).sum()), 2),
+                           "max_weight": round(float(mx[h]), 4), "argmax_back": int(T - 1 - arg[h])}
+                          for h in range(last.shape[0])],
+                "last_rows": [_round(row, 4) for row in last.cpu()],
+                "attn_out_norm": round(attn_out[l], 3), "ff_out_norm": round(ff_out[l], 3),
+                "resid_in_norm": round(float(norms[l][-1]), 3), "resid_out_norm": round(float(norms[l + 1][-1]), 3)})
         return {"kind": "attention", "layer": layer, "head": head, "n_layers": len(attn), "n_heads": a.shape[0],
+                "layer_stats": layer_stats,
                 "matrix": [_round(row, 4) for row in matrix.cpu()],
                 "last_row_by_head": [_round(row, 4) for row in a[:, -1, :].cpu()],
                 "head_mean_distance": _round(dist.cpu(), 2),
@@ -149,8 +207,22 @@ class Inspector:
             h, c, gates = CustomLSTMCell(model.lstm, l).run(x)
             layers.append((h, c, gates))
             x = h  # inter-layer dropout is off in eval mode
+        layer_stats = []
+        for hh, cc, gg in layers:  # every layer, at the current (last) position
+            sig = {k: gg[k][-1] for k in ("input", "forget", "output")}
+            layer_stats.append({
+                "gate_means": {k: round(float(v.mean()), 4) for k, v in sig.items()},
+                "hist": {k: [int(n) for n in torch.histc(v.float(), bins=20, min=0, max=1).cpu()] for k, v in sig.items()},
+                "cell_hist": [int(n) for n in torch.histc(gg["cell"][-1].float(), bins=20, min=-1, max=1).cpu()],
+                "forget_open": round(float((sig["forget"] > 0.9).float().mean()), 4),
+                "forget_closed": round(float((sig["forget"] < 0.1).float().mean()), 4),
+                "input_open": round(float((sig["input"] > 0.9).float().mean()), 4),
+                "h_norm": round(float(hh[-1].norm()), 3), "c_norm": round(float(cc[-1].norm()), 3),
+                "c_absmax": round(float(cc[-1].abs().max()), 3)})
         h, c, gates = layers[layer]
+        gates = {k: v for k, v in gates.items() if k != "cell"}
         return {"kind": "gates", "layer": layer, "n_layers": len(layers), "hidden_size": h.shape[1],
+                "layer_stats": layer_stats,
                 "gates": {name: _round(g[-1].cpu(), 3) for name, g in gates.items()},
                 "gate_means": {name: round(float(g[-1].mean()), 4) for name, g in gates.items()},
                 "gate_means_over_time": {name: _round(g.mean(-1).cpu(), 4) for name, g in gates.items()},

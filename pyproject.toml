@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lmscope"
 dynamic = ["version"]
-description = "Step through LSTM / Transformer language-model inference in the browser"
+description = "Learn how small LSTM and Transformer language models work by stepping through their inference in the browser"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

@@ -36,6 +36,11 @@ def create_app(inspector, reference_text=None):
     def model_info(_):
         return {**inspector.model_info(), "reference_text": reference_text}
 
+    @app.get("/api/architecture")
+    @api
+    def architecture(_):
+        return inspector.architecture()
+
     @app.get("/api/state")
     @api
     def state(_):

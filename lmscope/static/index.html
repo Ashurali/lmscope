@@ -53,6 +53,56 @@
   footer { padding: 0 16px 16px; }
   #refText { width: 100%; height: 48px; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  .tabs { display: flex; gap: 2px; }
+  .tabs button { border-radius: 4px; }
+  .tabs button.on { background: #1f2937; border-color: #1f2937; color: #fff; }
+  [hidden] { display: none !important; }
+  #archView { padding: 12px 16px 16px; }
+  #archGrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { #archGrid { grid-template-columns: 1fr; } }
+  .acard { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: #fff; }
+  .acard.io { background: #f8fafc; }
+  .acard.sel { border-color: var(--chosen); box-shadow: 0 0 0 2px #fed7aa; }
+  .ahead { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 6px; }
+  .ahead b { font-size: 13px; }
+  .ahead .sp { flex: 1; }
+  .shape { font-family: var(--mono); font-size: 11px; color: #3730a3; background: #eef2ff; padding: 1px 5px; border-radius: 3px; }
+  .pc { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 3px 0; }
+  .op { font-family: var(--mono); font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; background: #fff; }
+  .op small { color: var(--muted); font-size: 10px; margin-left: 4px; }
+  .op.w { background: #eff6ff; border-color: #bfdbfe; }
+  .op.nl { background: #f0fdf4; border-color: #bbf7d0; }
+  .op.norm { background: #fefce8; border-color: #fde68a; }
+  .op.drop { color: var(--muted); border-style: dashed; }
+  .op.add { border-radius: 50%; padding: 1px 6px; font-weight: 700; background: #fff7ed; border-color: #fdba74; }
+  .ar { color: #94a3b8; font-size: 12px; }
+  .down { text-align: center; color: #94a3b8; font-size: 14px; line-height: 1; margin: 3px 0; }
+  .rail { border-left: 4px solid #fdba74; padding-left: 12px; margin-left: 6px; position: relative; }
+  .rail-label { font-size: 11px; color: #c2410c; margin: 0 0 4px 6px; font-family: var(--mono); }
+  .sub { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 6px; }
+  .sub-t { font-size: 11px; font-weight: 600; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .live { font-family: var(--mono); font-size: 11px; color: #9a3412; }
+  .mbar { display: inline-block; width: 80px; height: 7px; background: #f1f5f9; border-radius: 4px; overflow: hidden; vertical-align: middle; }
+  .mbar > i { display: block; height: 100%; background: #fb923c; }
+  .heads { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px; margin-top: 6px; }
+  .hchip { border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; cursor: pointer; font-family: var(--mono); font-size: 10px; background: #fff; }
+  .hchip:hover { border-color: #93c5fd; }
+  .hchip.sel { border-color: var(--chosen); box-shadow: 0 0 0 1px var(--chosen); }
+  .hchip canvas { width: 100%; height: 22px; margin-top: 2px; }
+  .gh { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+  .gh div { font-family: var(--mono); font-size: 10px; }
+  .gh canvas { width: 100%; height: 40px; }
+  .linkbtn { font-size: 11px; padding: 1px 6px; }
+  .toks { display: flex; flex-wrap: wrap; gap: 2px; }
+  .eq { font-family: var(--mono); font-size: 11px; background: #f8fafc; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; margin: 4px 0; white-space: pre-wrap; }
+  #archSide table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #archSide td { padding: 2px 4px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  #archSide td:first-child { color: var(--muted); }
+  #archSide td.n { font-family: var(--mono); text-align: right; overflow-wrap: anywhere; }
+  #archSide td:first-child { width: 48%; }
+  #archSide .pbar { height: 6px; background: #60a5fa; border-radius: 3px; min-width: 1px; }
+  #archSide .panel { margin-bottom: 12px; }
   #tip { position: fixed; pointer-events: none; background: #111827; color: #fff; font: 11px var(--mono);
          padding: 3px 6px; border-radius: 3px; display: none; z-index: 10; white-space: pre; }
 </style>
@@ -60,6 +110,7 @@
 <body>
 <header>
   <h1>lmscope</h1>
+  <div class="tabs noexport"><button class="on" data-tab="inspect">Inspector</button><button data-tab="arch">Architecture</button></div>
   <span class="badge" id="badge">loading…</span>
   <div class="group">
     <textarea id="prompt" title="Prompt (newlines allowed)"></textarea>
@@ -76,6 +127,7 @@
   <span id="status"></span>
 </header>
 
+<div id="inspectView">
 <main id="main">
   <section class="panel" id="panelTokens">
     <h2>Token sequence <button class="export noexport" data-panel="panelTokens">PNG</button></h2>
@@ -120,12 +172,26 @@
     <canvas id="refCanvas"></canvas>
   </section>
 </footer>
+</div>
+
+<div id="archView" hidden>
+  <div id="archGrid">
+    <section class="panel" id="panelArch">
+      <h2><span>Architecture <span class="muted" id="archTitle"></span></span>
+          <button class="export noexport" data-panel="panelArch">PNG</button></h2>
+      <div class="muted" style="font-size:11px;margin-bottom:8px">Built from the loaded checkpoint: sizes from its config, parameter counts from its weights.
+        Orange numbers are live for the selected step (the query = the token being predicted). Click a layer or head to select it in the Inspector.</div>
+      <div id="archDiagram"></div>
+    </section>
+    <aside id="archSide"></aside>
+  </div>
+</div>
 <div id="tip"></div>
 
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
-const S = { info: null, seq: null, view: null, an: null, layer: 0, head: "mean", playing: false, ref: null };
+const S = { info: null, seq: null, view: null, an: null, layer: 0, head: "mean", playing: false, ref: null, arch: null, tab: "inspect" };
 const DPR = Math.max(2, window.devicePixelRatio || 1);
 const MONO = 'ui-monospace, "Cascadia Mono", Consolas, monospace';
 const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
@@ -371,8 +437,182 @@ function renderLoss() {
   } else { $("#refStats").textContent = ""; setup($("#refCanvas"), width, 1); }
 }
 
+// ---------------------------------------------------------------- architecture tab
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function fmtN(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+const pctOf = n => (100 * n / S.arch.total_params).toFixed(n / S.arch.total_params < 0.01 ? 2 : 1) + "%";
+const op = (label, cls = "", small = "") => `<span class="op ${cls}">${label}${small ? `<small>${small}</small>` : ""}</span>`;
+const AR = `<span class="ar">→</span>`;
+const DOWN = `<div class="down">↓</div>`;
+function mbar(v, max) { return `<span class="mbar"><i style="width:${Math.min(100, 100 * v / (max || 1)).toFixed(1)}%"></i></span>`; }
+
+function archInputCard(a, T) {
+  const labels = S.an.internals.labels, tail = labels.slice(-14);
+  return `<div class="acard io"><div class="ahead"><b>Input tokens</b>
+      <span class="shape">T = ${T}</span><span class="pc">window of the last ≤ ${a.context_len} tokens before step ${S.an.position} · ${a.tokenizer_type} tokenizer, vocab V = ${a.vocab_size}</span></div>
+    <div class="toks">${labels.length > tail.length ? `<span class="muted">… </span>` : ""}${tail.map(t => `<span class="chip prompt">${esc(show(t))}</span>`).join("")}<span class="chip next">▸ ?</span></div></div>`;
+}
+
+function archOutputCard(a, lastNormHtml) {
+  const d = S.an.distribution, top = d.top.slice(0, 3).map(r => `${esc(JSON.stringify(r.token))} ${fmtPct(r.prob)}`).join(" · ");
+  const inDim = a.model_type === "transformer" ? a.d_model : a.hidden_size;
+  return `<div class="acard io"><div class="ahead"><b>Output</b><span class="shape">T × ${a.vocab_size} logits</span><span class="sp"></span>
+      <span class="pc">${fmtN(a.head + (a.ln_f || 0))} params · ${pctOf(a.head + (a.ln_f || 0))}</span></div>
+    <div class="flow">${lastNormHtml}${op(`Linear ${inDim}→${a.vocab_size}`, "w", fmtN(a.head))}${AR}${op("logits z")}${AR}${op(`softmax(z / T)`, "nl", `T = ${d.temperature.toFixed(2)}`)}${AR}${op("p(next token)")}</div>
+    <div class="live">H = ${d.entropy_bits.toFixed(2)} bits (2^H ≈ ${Math.pow(2, d.entropy_bits).toFixed(1)} choices) · top: ${top}</div></div>`;
+}
+
+function archTransformer(a, it, T) {
+  const ls = it.layer_stats, H = a.n_heads, dk = a.d_k, d = a.d_model;
+  const maxNorm = Math.max(...ls.map(s => Math.max(s.resid_out_norm, s.attn_out_norm, s.ff_out_norm)));
+  let html = archInputCard(a, T) + DOWN;
+  html += `<div class="acard"><div class="ahead"><b>Embedding</b><span class="shape">T × ${d}</span><span class="sp"></span>
+      <span class="pc">${fmtN(a.tok_embed + a.pos_embed)} params · ${pctOf(a.tok_embed + a.pos_embed)}</span></div>
+    <div class="flow">${op(`token embedding ${a.vocab_size}×${d}`, "w", fmtN(a.tok_embed))}<span class="ar">+</span>${op(`position embedding ${a.context_len}×${d}`, "w", fmtN(a.pos_embed))}${AR}${op(`dropout p=${a.dropout}`, "drop", "train only")}${AR}${op("x₀")}</div>
+    <div class="live">‖x₀‖ at the query = ${ls[0].resid_in_norm.toFixed(2)}</div></div>${DOWN}`;
+  html += `<div class="rail-label">residual stream x ∈ ℝ^(T×${d}) — each sublayer adds its output (⊕)</div><div class="rail">`;
+  ls.forEach((s, l) => {
+    const b = a.blocks[l], sel = S.layer === l;
+    const heads = s.heads.map((h, k) => `<div class="hchip ${sel && String(S.head) === String(k) ? "sel" : ""}" data-layer="${l}" data-head="${k}"
+        title="layer ${l + 1}, head ${k + 1}: where the current query attends (keys left→right, newest on the right)">
+        <b>h${k + 1}</b> H ${h.entropy_bits.toFixed(2)}b · ${h.mean_distance.toFixed(1)} back<br>max ${h.max_weight.toFixed(2)} @ ${h.argmax_back} back
+        <canvas data-spark="${l},${k}"></canvas></div>`).join("");
+    html += `<div class="acard ${sel ? "sel" : ""}" data-layer="${l}">
+      <div class="ahead"><b>Block ${l + 1}</b><span class="shape">T × ${d} → T × ${d}</span>
+        <span class="live">‖x‖ ${s.resid_in_norm.toFixed(1)} → ${s.resid_out_norm.toFixed(1)}</span><span class="sp"></span>
+        <span class="pc">${fmtN(b.params)} params · ${pctOf(b.params)}</span>
+        <button class="linkbtn noexport" data-goto="${l}">inspect ▸</button></div>
+      <div class="sub"><div class="sub-t">Attention sublayer · ${H} heads × d_k ${dk} · ${fmtN(b.ln1 + b.attn.params)} params
+          <span class="live">writes ‖Δ‖ = ${s.attn_out_norm.toFixed(2)} ${mbar(s.attn_out_norm, maxNorm)}</span></div>
+        <div class="flow">${op("LayerNorm", "norm", fmtN(b.ln1))}${AR}${op(`Linear ${d}→${3 * d} (Q,K,V)`, "w", fmtN(b.attn.qkv))}${AR}${op(`split ${H} heads × ${dk}`)}${AR}${op(`QKᵀ / √${dk}`)}${AR}${op("causal mask")}${AR}${op("softmax", "nl", `${H}×T×T`)}${AR}${op(`dropout ${a.dropout}`, "drop")}${AR}${op("· V")}${AR}${op(`concat → Linear ${d}→${d}`, "w", fmtN(b.attn.proj))}${AR}${op(`dropout ${a.dropout}`, "drop")}${AR}${op("⊕", "add")}</div>
+        <div class="heads">${heads}</div></div>
+      <div class="sub"><div class="sub-t">Feed-forward sublayer · ${fmtN(b.ln2 + b.ff.params)} params
+          <span class="live">writes ‖Δ‖ = ${s.ff_out_norm.toFixed(2)} ${mbar(s.ff_out_norm, maxNorm)}</span></div>
+        <div class="flow">${op("LayerNorm", "norm", fmtN(b.ln2))}${AR}${op(`Linear ${d}→${a.d_ff}`, "w", fmtN(b.ff.fc1))}${AR}${op(a.activation, "nl")}${AR}${op(`Linear ${a.d_ff}→${d}`, "w", fmtN(b.ff.fc2))}${AR}${op(`dropout ${a.dropout}`, "drop")}${AR}${op("⊕", "add")}</div></div>
+    </div>${l < ls.length - 1 ? DOWN : ""}`;
+  });
+  html += `</div>${DOWN}`;
+  return html + archOutputCard(a, op("final LayerNorm", "norm", fmtN(a.ln_f)) + AR);
+}
+
+function archLSTM(a, it, T) {
+  const ls = it.layer_stats, Hs = a.hidden_size;
+  let html = archInputCard(a, T) + DOWN;
+  html += `<div class="acard"><div class="ahead"><b>Embedding</b><span class="shape">T × ${a.d_model}</span><span class="sp"></span>
+      <span class="pc">${fmtN(a.embed)} params · ${pctOf(a.embed)}</span></div>
+    <div class="flow">${op(`token embedding ${a.vocab_size}×${a.d_model}`, "w", fmtN(a.embed))}${AR}${op("x_t")}</div>
+    <div class="muted" style="font-size:11px">no position embedding: order comes from reading the tokens one at a time</div></div>${DOWN}`;
+  ls.forEach((s, l) => {
+    const ly = a.layers[l], sel = S.layer === l, g = s.gate_means;
+    html += `<div class="acard ${sel ? "sel" : ""}" data-layer="${l}">
+      <div class="ahead"><b>LSTM layer ${l + 1}</b><span class="shape">T × ${ly.input_size} → T × ${Hs}</span><span class="sp"></span>
+        <span class="pc">${fmtN(ly.params)} params · ${pctOf(ly.params)}</span>
+        <button class="linkbtn noexport" data-goto="${l}">inspect ▸</button></div>
+      <div class="flow">${op(`W_ih ${4 * Hs}×${ly.input_size}`, "w", fmtN(ly.w_ih))}${op(`W_hh ${4 * Hs}×${Hs}`, "w", fmtN(ly.w_hh))}${op(`b_ih + b_hh 2×${4 * Hs}`, "w", fmtN(ly.bias))}</div>
+      <div class="eq">[i f g o] = W_ih x_t + W_hh h_(t−1) + b      (${4 * Hs} = 4 gates × ${Hs})
+i, f, o = σ(·)    g = tanh(·)
+c_t = f ⊙ c_(t−1) + i ⊙ g        h_t = o ⊙ tanh(c_t)        h_t, c_t → step t+1</div>
+      <div class="live">at the query: mean i ${g.input.toFixed(2)} · f ${g.forget.toFixed(2)} · o ${g.output.toFixed(2)} ·
+        ${(100 * s.forget_open).toFixed(0)}% units keep memory (f > 0.9) · ${(100 * s.forget_closed).toFixed(0)}% erase (f < 0.1) ·
+        ‖h‖ ${s.h_norm.toFixed(1)} · ‖c‖ ${s.c_norm.toFixed(1)} · max|c| ${s.c_absmax.toFixed(1)}</div>
+      <div class="gh">${["input", "forget", "output"].map(k => `<div>${k} gate σ (0…1)<canvas data-hist="${l},${k}"></canvas></div>`).join("")}
+        <div>cell candidate g (−1…1)<canvas data-hist="${l},cell"></canvas></div></div>
+    </div>${l < ls.length - 1 ? `<div class="down">↓ <span class="op drop">dropout ${a.dropout} (train only)</span></div>` : ""}`;
+  });
+  html += DOWN;
+  return html + archOutputCard(a, op(`dropout ${a.dropout}`, "drop", "train only") + AR);
+}
+
+function archSide(a, T) {
+  const tf = a.model_type === "transformer";
+  const hp = tf ? [
+    ["type", "decoder-only Transformer"], ["d_model", a.d_model], ["layers (blocks)", a.n_layers], ["heads", a.n_heads],
+    ["d_k = d_model / heads", a.d_k], ["d_ff", `${a.d_ff} (${a.d_ff / a.d_model}× d_model)`], ["activation", a.activation],
+    ["normalization", a.norm], ["positions", a.positions], ["context length", a.context_len], ["dropout", a.dropout],
+    ["vocab", `${a.vocab_size} (${a.tokenizer_type})`], ["weight tying", "no (separate output head)"]
+  ] : [
+    ["type", "stacked LSTM"], ["embedding dim", a.d_model], ["hidden size", a.hidden_size], ["layers", a.n_layers],
+    ["gate order (weights)", a.gate_order], ["dropout", `${a.dropout} (between layers and before the head)`],
+    ["context length (trained)", a.context_len], ["vocab", `${a.vocab_size} (${a.tokenizer_type})`]
+  ];
+  const maxG = Math.max(...a.groups.map(g => g[1]));
+  const f = a.flops_per_token, attnF = f.attention_per_ctx_token * T;
+  const shapes = tf ? [
+    ["tokens", `T = ${T}`], ["residual x", `${T} × ${a.d_model}`], ["Q, K, V (per layer)", `${a.n_heads} × ${T} × ${a.d_k}`],
+    ["attention weights", `${a.n_heads} × ${T} × ${T}`], ["FFN hidden", `${T} × ${a.d_ff}`], ["logits", `${T} × ${a.vocab_size}`]
+  ] : [
+    ["tokens", `T = ${T}`], ["x_t", a.d_model], ["gates per step", `4 × ${a.hidden_size}`],
+    ["h_t, c_t per layer", a.hidden_size], ["state carried", `${a.n_layers} × 2 × ${a.hidden_size}`], ["logits", `${T} × ${a.vocab_size}`]
+  ];
+  const tbl = rows => `<table>${rows.map(r => `<tr><td>${r[0]}</td><td class="n">${esc(r[1])}</td></tr>`).join("")}</table>`;
+  return `<section class="panel"><h2>Hyperparameters</h2>${tbl(hp)}</section>
+    <section class="panel"><h2>Parameters · ${a.total_params.toLocaleString()}</h2>
+      <table>${a.groups.map(g => `<tr><td>${g[0]}<div class="pbar" style="width:${(100 * g[1] / maxG).toFixed(1)}%"></div></td>
+        <td class="n">${fmtN(g[1])}</td><td class="n">${pctOf(g[1])}</td></tr>`).join("")}</table>
+      <div class="muted" style="font-size:11px;margin-top:4px">${tf
+        ? `per block: ${fmtN(a.blocks[0].params)} (attention ${fmtN(a.blocks[0].attn.params)}, FFN ${fmtN(a.blocks[0].ff.params)}) · embedding + head scale with V`
+        : `layer 1 is smaller because its input is the ${a.d_model}-dim embedding, not the ${a.hidden_size}-dim h of the layer below`}</div></section>
+    <section class="panel"><h2>Shapes for this step</h2>${tbl(shapes)}</section>
+    <section class="panel"><h2>Compute per predicted token</h2>${tbl([
+      ["weight matmuls ≈ 2 × non-embedding params", `${(f.matmul / 1e6).toFixed(1)} MFLOP`],
+      ...(tf ? [["attention ≈ 4 · layers · d_model · T", `${(attnF / 1e6).toFixed(2)} MFLOP`]] : []),
+      ["total", `${((f.matmul + attnF) / 1e6).toFixed(1)} MFLOP`]])}
+      <div class="muted" style="font-size:11px;margin-top:4px">${tf
+        ? "all T positions are computed in parallel; attention cost grows with T (quadratic over a whole sequence)"
+        : "constant cost per token, but steps run one after another: h_t needs h_(t−1)"}</div></section>`;
+}
+
+function drawArchCanvases() {
+  const it = S.an.internals;
+  document.querySelectorAll("#archDiagram canvas[data-spark]").forEach(cv => {
+    const [l, k] = cv.dataset.spark.split(",").map(Number), row = it.layer_stats[l].last_rows[k];
+    const w = Math.max(60, cv.clientWidth), h = 22, ctx = setup(cv, w, h), n = row.length, bw = w / n, mx = Math.max(...row, 1e-9);
+    row.forEach((v, j) => { ctx.fillStyle = viridis(v / mx); const bh = Math.max(1, h * v / mx); ctx.fillRect(j * bw, h - bh, Math.max(bw, 0.8), bh); });
+  });
+  document.querySelectorAll("#archDiagram canvas[data-hist]").forEach(cv => {
+    const [l, k] = cv.dataset.hist.split(","), s = it.layer_stats[+l];
+    const bins = k === "cell" ? s.cell_hist : s.hist[k], w = Math.max(60, cv.clientWidth), h = 40, ctx = setup(cv, w, h);
+    const mx = Math.max(...bins, 1), bw = w / bins.length;
+    bins.forEach((v, j) => { ctx.fillStyle = k === "cell" ? "#a78bfa" : viridis((j + 0.5) / bins.length); ctx.fillRect(j * bw + 0.5, h - h * v / mx, bw - 1, h * v / mx); });
+    ctx.strokeStyle = "#e5e7eb"; ctx.beginPath(); ctx.moveTo(0, h - 0.5); ctx.lineTo(w, h - 0.5); ctx.stroke();
+  });
+}
+
+function selectLayer(l, head) {
+  S.layer = l; $("#layerSel").value = String(l);
+  if (head !== undefined) { S.head = head; $("#headSel").value = String(head); }
+  run(analyze);
+}
+function setTab(t) {
+  S.tab = t;
+  history.replaceState(null, "", t === "arch" ? "#arch" : location.pathname);
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $("#inspectView").hidden = t !== "inspect"; $("#archView").hidden = t !== "arch";
+  if (S.an) t === "arch" ? renderArch() : renderAll();
+}
+function renderArch() {
+  if (S.tab !== "arch" || !S.arch || !S.an) return;
+  const a = S.arch, it = S.an.internals, T = it.labels.length;
+  $("#archTitle").textContent = `· ${a.model_type === "lstm" ? "LSTM" : "Transformer"} · ${fmtN(a.total_params)} params · step ${S.an.position}`;
+  $("#archDiagram").innerHTML = a.model_type === "transformer" ? archTransformer(a, it, T) : archLSTM(a, it, T);
+  $("#archSide").innerHTML = archSide(a, T);
+  drawArchCanvases();
+  document.querySelectorAll("#archDiagram .hchip").forEach(c => c.onclick = e => { e.stopPropagation(); selectLayer(+c.dataset.layer, c.dataset.head); });
+  document.querySelectorAll("#archDiagram .acard[data-layer]").forEach(c => c.onclick = () => selectLayer(+c.dataset.layer, a.model_type === "transformer" ? "mean" : undefined));
+  document.querySelectorAll("#archDiagram button[data-goto]").forEach(b => b.onclick = e => {
+    e.stopPropagation(); setTab("inspect"); selectLayer(+b.dataset.goto, a.model_type === "transformer" ? S.head : undefined);
+  });
+}
+
 // ---------------------------------------------------------------- actions
-function renderAll() { renderTokens(); renderDist(); renderInternals(); renderLoss(); }
+function renderAll() {
+  if (S.tab === "arch") return renderArch();
+  renderTokens(); renderDist(); renderInternals(); renderLoss();
+}
 async function analyze() {
   S.an = await api("/api/step", { position: S.view, temperature: T(), layer: S.layer, head: S.head });
   renderAll();
@@ -433,6 +673,7 @@ $("#scoreBtn").onclick = () => run(async () => { S.ref = await api("/api/score",
 $("#exportPage").onclick = () => run(() => exportEl(document.body, "page"));
 document.querySelectorAll("button.export").forEach(b => b.onclick = () =>
   run(() => exportEl($("#" + b.dataset.panel), b.dataset.panel.replace("panel", "").toLowerCase())));
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
 let resizeTimer;
 window.onresize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => S.an && renderAll(), 150); };
 
@@ -442,10 +683,12 @@ run(async () => {
     + `${i.n_layers} layers · ${i.tokenizer_type} tokenizer · vocab ${i.vocab_size} · ctx ${i.context_len} · ${i.device}`;
   if (i.reference_text) $("#refText").value = i.reference_text.slice(0, 4000);
   fillSelectors();
+  S.arch = await api("/api/architecture");
   S.seq = await api("/api/state");
   $("#prompt").value = S.seq.tokens.slice(0, S.seq.prompt_len).map(t => t.token).join("");
   S.view = S.seq.length;
   await analyze();
+  if (location.hash === "#arch") setTab("arch");
 });
 </script>
 </body>
