@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lmscope</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #2563eb; --chosen: #ea580c; --mask: #f1f2f4;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 10px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; }
+  .badge { font-family: var(--mono); font-size: 12px; background: #eef2ff; color: #3730a3; padding: 3px 8px; border-radius: 4px; }
+  .group { display: flex; align-items: center; gap: 6px; }
+  textarea, input[type=text] { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+  #prompt { width: 220px; height: 40px; resize: vertical; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #f1f5f9; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  .value { font-family: var(--mono); min-width: 3.5em; display: inline-block; }
+  #status { color: #b91c1c; font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.1fr) minmax(420px, 1.5fr); gap: 12px; padding: 12px 16px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+  .panel h2 { font-size: 13px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .panel h3 { font-size: 12px; margin: 12px 0 4px; color: var(--muted); font-weight: 600; }
+  .export { font-size: 11px; padding: 1px 6px; color: var(--muted); }
+  .muted { color: var(--muted); }
+  #tokens { display: flex; flex-wrap: wrap; gap: 2px; align-content: flex-start; max-height: 52vh; overflow-y: auto;
+            padding: 4px; border: 1px solid var(--line); border-radius: 4px; }
+  .chip { font-family: var(--mono); font-size: 12px; padding: 1px 3px; border-radius: 3px; cursor: pointer;
+          border: 1px solid transparent; white-space: pre; min-width: 10px; text-align: center; }
+  .chip.prompt { background: #e5e7eb; color: #374151; }
+  .chip.first { cursor: default; }
+  .chip.view { outline: 2px solid var(--chosen); outline-offset: 0; }
+  .chip.next { border: 1px dashed #94a3b8; color: var(--muted); }
+  .chip.inctx { box-shadow: inset 0 -2px 0 #93c5fd; }
+  .br { flex-basis: 100%; height: 0; }
+  #seqtext { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; max-height: 18vh; overflow-y: auto;
+             background: #fafafa; border: 1px solid var(--line); border-radius: 4px; padding: 6px; margin: 6px 0 0; }
+  .gauge { height: 10px; background: #e5e7eb; border-radius: 5px; overflow: hidden; }
+  .gauge > div { height: 100%; background: linear-gradient(90deg, #22c55e, #eab308, #ef4444); }
+  .stats { font-family: var(--mono); font-size: 12px; }
+  select { font: inherit; padding: 2px 4px; }
+  canvas { display: block; max-width: 100%; }
+  footer { padding: 0 16px 16px; }
+  #refText { width: 100%; height: 48px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  #tip { position: fixed; pointer-events: none; background: #111827; color: #fff; font: 11px var(--mono);
+         padding: 3px 6px; border-radius: 3px; display: none; z-index: 10; white-space: pre; }
+</style>
+</head>
+<body>
+<header>
+  <h1>lmscope</h1>
+  <span class="badge" id="badge">loading…</span>
+  <div class="group">
+    <textarea id="prompt" title="Prompt (newlines allowed)"></textarea>
+    <button id="setPrompt">Set prompt</button>
+  </div>
+  <div class="group">T <input type="range" id="temp" min="0.1" max="2" step="0.05" value="1"><span class="value" id="tempVal">1.00</span></div>
+  <div class="group">
+    <button class="primary" id="stepBtn">Step</button>
+    <button id="playBtn">▶ Play</button>
+    delay <input type="range" id="speed" min="100" max="2000" step="50" value="400"><span class="value" id="speedVal">400ms</span>
+    <button id="resetBtn">Reset</button>
+  </div>
+  <button id="exportPage">Export page PNG</button>
+  <span id="status"></span>
+</header>
+
+<main id="main">
+  <section class="panel" id="panelTokens">
+    <h2>Token sequence <button class="export noexport" data-panel="panelTokens">PNG</button></h2>
+    <div id="tokens"></div>
+    <div class="stats" id="seqStats" style="margin-top:6px"></div>
+    <div class="muted" style="font-size:11px">Colour = probability of the sampled token. Click a token to see the step that produced it; the dashed chip is the next prediction. Blue underline = tokens the model sees for the selected step.</div>
+    <div id="seqtext"></div>
+  </section>
+
+  <section class="panel" id="panelDist">
+    <h2><span>Next-token distribution <span class="muted" id="distTitle"></span></span>
+        <button class="export noexport" data-panel="panelDist">PNG</button></h2>
+    <canvas id="distCanvas"></canvas>
+    <h3>Entropy</h3>
+    <div class="gauge"><div id="entropyBar" style="width:0"></div></div>
+    <div class="stats" id="entropyText"></div>
+    <h3>Probability mass</h3>
+    <div class="stats" id="massText"></div>
+  </section>
+
+  <section class="panel" id="panelInternals">
+    <h2><span id="internalsTitle">Model internals</span>
+        <button class="export noexport" data-panel="panelInternals">PNG</button></h2>
+    <div class="row">
+      layer <select id="layerSel"></select>
+      <span id="headWrap">head <select id="headSel"></select>
+        <label title="square-root colour scale: shows weak attention next to a strong sink"><input type="checkbox" id="sqrtScale"> √ colour scale</label></span>
+      <label id="sortWrap"><input type="checkbox" id="sortUnits"> sort units</label>
+    </div>
+    <div id="internalsBody"></div>
+  </section>
+</main>
+
+<footer>
+  <section class="panel" id="panelLoss">
+    <h2>Loss / perplexity (T = 1) <button class="export noexport" data-panel="panelLoss">PNG</button></h2>
+    <div class="stats" id="genLossText"></div>
+    <canvas id="genLossCanvas"></canvas>
+    <h3>Reference continuation (teacher-forced after the prompt)</h3>
+    <textarea id="refText" placeholder="Paste the true continuation of the prompt, e.g. from the validation set"></textarea>
+    <div class="row"><button id="scoreBtn">Score reference</button><span class="stats" id="refStats"></span></div>
+    <canvas id="refCanvas"></canvas>
+  </section>
+</footer>
+<div id="tip"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const S = { info: null, seq: null, view: null, an: null, layer: 0, head: "mean", playing: false, ref: null };
+const DPR = Math.max(2, window.devicePixelRatio || 1);
+const MONO = 'ui-monospace, "Cascadia Mono", Consolas, monospace';
+const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
+const VIRIDIS = [[68,1,84],[72,40,120],[62,74,137],[49,104,142],[38,130,142],[31,158,137],[53,183,121],[109,205,89],[180,222,44],[253,231,37]];
+
+// ---------------------------------------------------------------- helpers
+async function api(path, body) {
+  const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+let chain = Promise.resolve();
+function run(fn) {  // serialize all requests so steps never interleave
+  chain = chain.then(fn).then(() => { $("#status").textContent = ""; })
+    .catch(e => { $("#status").textContent = e.message; stopPlay(); });
+  return chain;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = () => parseFloat($("#temp").value);
+const show = t => t === "" ? "∅" : t.replace(/\n/g, "↵").replace(/ /g, "␣").replace(/\t/g, "⇥");
+function viridis(x) {
+  x = Math.min(1, Math.max(0, x)) * (VIRIDIS.length - 1);
+  const i = Math.min(VIRIDIS.length - 2, Math.floor(x)), f = x - i, a = VIRIDIS[i], b = VIRIDIS[i + 1];
+  return `rgb(${a.map((v, k) => Math.round(v + f * (b[k] - v))).join(",")})`;
+}
+function setup(cv, w, h) {  // canvases are drawn at >= 2x so exported PNGs stay sharp
+  cv.width = Math.round(w * DPR); cv.height = Math.round(h * DPR);
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+  return ctx;
+}
+const widthOf = el => Math.max(240, el.clientWidth - 24);
+const fmtPct = p => (100 * p).toFixed(p < 0.001 ? 3 : 1) + "%";
+function niceMax(v) { if (v <= 0) return 1; const e = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / e * 2) / 2 * e; }
+
+function lineChart(cv, width, height, series, opts = {}) {
+  const ctx = setup(cv, width, height);
+  const L = 44, R = 10, Tp = 18, B = 30, w = width - L - R, h = height - Tp - B;
+  const all = series.flatMap(s => s.values), n = Math.max(...series.map(s => s.values.length));
+  let lo = opts.min ?? Math.min(...all), hi = opts.max ?? Math.max(...all);
+  if (hi - lo < 1e-9) hi = lo + 1;
+  const X = i => L + (n <= 1 ? w / 2 : i / (n - 1) * w), Y = v => Tp + h - (v - lo) / (hi - lo) * h;
+  ctx.strokeStyle = "#e5e7eb"; ctx.fillStyle = "#6b7280"; ctx.font = "10px system-ui"; ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = lo + (hi - lo) * k / 4, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + w, y); ctx.stroke();
+    ctx.textAlign = "right"; ctx.fillText(v.toFixed(hi - lo < 5 ? 2 : 0), L - 4, y + 3);
+  }
+  ctx.textAlign = "center"; ctx.fillText(opts.xlabel || "", L + w / 2, height - 4);
+  if (n > 0) for (const k of new Set([0, n - 1])) ctx.fillText(String((opts.x0 || 0) + k), X(k), Tp + h + 12);
+  series.forEach((s, si) => {
+    ctx.strokeStyle = s.color || PALETTE[si % 10]; ctx.lineWidth = 1.5; ctx.beginPath();
+    s.values.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v)));
+    if (s.values.length === 1) ctx.arc(X(0), Y(s.values[0]), 2, 0, 7);
+    ctx.stroke();
+  });
+  let lx = L; ctx.textAlign = "left";
+  series.forEach((s, si) => {
+    ctx.fillStyle = s.color || PALETTE[si % 10]; ctx.fillRect(lx, 5, 10, 3);
+    ctx.fillStyle = "#374151"; ctx.fillText(s.name, lx + 13, 10);
+    lx += 20 + ctx.measureText(s.name).width;
+  });
+  if (opts.ylabel) { ctx.save(); ctx.translate(10, Tp + h / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#6b7280"; ctx.fillText(opts.ylabel, 0, 0); ctx.restore(); }
+}
+
+// ---------------------------------------------------------------- tokens
+function renderTokens() {
+  const box = $("#tokens"), seq = S.seq, start = S.an ? S.an.window_start : 0;
+  box.innerHTML = "";
+  seq.tokens.forEach((t, i) => {
+    const c = document.createElement("span");
+    c.className = "chip" + (t.generated ? "" : " prompt") + (i === 0 ? " first" : "") + (i === S.view ? " view" : "")
+      + (i >= start && i < S.view ? " inctx" : "");
+    c.textContent = show(t.token);
+    if (t.generated) {
+      c.style.background = `rgba(37,99,235,${(0.12 + 0.88 * t.prob).toFixed(3)})`;
+      c.style.color = t.prob > 0.45 ? "#fff" : "#1e3a8a";
+    }
+    c.title = `#${i} ${JSON.stringify(t.token)}` + (t.generated ? `\np(sampled) = ${t.prob}\nloss (T=1) = ${t.loss}` : "\nprompt token");
+    if (i > 0) c.onclick = () => { S.view = i; run(analyze); };
+    box.appendChild(c);
+    if (t.token.endsWith("\n")) { const br = document.createElement("span"); br.className = "br"; box.appendChild(br); }
+  });
+  const nx = document.createElement("span");
+  nx.className = "chip next" + (S.view === seq.length ? " view" : "");
+  nx.textContent = "▸ next"; nx.title = "prediction for the next token";
+  nx.onclick = () => { S.view = seq.length; run(analyze); };
+  box.appendChild(nx);
+  if (S.view === seq.length) box.scrollTop = box.scrollHeight;
+  const ctx = S.info.context_len;
+  $("#seqStats").textContent = `prompt ${seq.prompt_len} · generated ${seq.generated} · length ${seq.length} tokens · `
+    + `${seq.text.length} chars · step ${S.view} sees ${Math.min(S.view, ctx)}/${ctx} tokens`;
+  $("#seqtext").textContent = seq.text;
+}
+
+// ---------------------------------------------------------------- distribution
+function renderDist() {
+  const d = S.an.distribution, cv = $("#distCanvas"), width = widthOf($("#panelDist"));
+  const rows = d.top, chosen = d.chosen, chosenInTop = chosen && rows.some(r => r.id === chosen.id);
+  const rowH = 18, extra = chosen && !chosenInTop ? 1 : 0, height = (rows.length + extra) * rowH + 24;
+  const ctx = setup(cv, width, height);
+  const L = 64, R = 58, w = width - L - R, max = Math.max(...rows.map(r => r.prob), 1e-9);
+  ctx.font = "11px " + MONO;
+  rows.forEach((r, i) => {
+    const y = 4 + i * rowH, bw = Math.max(1, r.prob / max * w), isChosen = chosen && r.id === chosen.id;
+    ctx.fillStyle = isChosen ? "#ea580c" : "#2563eb";
+    ctx.fillRect(L, y + 2, bw, rowH - 5);
+    ctx.fillStyle = isChosen ? "#ea580c" : "#111827"; ctx.textAlign = "right";
+    ctx.fillText(show(r.token).slice(0, 9), L - 6, y + 13);
+    ctx.textAlign = "left"; ctx.fillStyle = "#374151";
+    ctx.fillText(fmtPct(r.prob), L + bw + 4, y + 13);
+  });
+  if (extra) {
+    ctx.fillStyle = "#ea580c"; ctx.textAlign = "left";
+    ctx.fillText(`chosen ${JSON.stringify(chosen.token)}: ${fmtPct(chosen.prob)} (rank ${chosen.rank})`, L, 4 + rows.length * rowH + 13);
+  }
+  ctx.fillStyle = "#6b7280"; ctx.textAlign = "center"; ctx.font = "10px system-ui";
+  ctx.fillText(`top ${rows.length} probabilities at T = ${d.temperature.toFixed(2)} · bars scaled to the top token`, L + w / 2, height - 4);
+  $("#distTitle").textContent = chosen
+    ? `· step ${S.an.position}, ${S.an.chosen_generated ? "sampled" : "prompt"} token ${JSON.stringify(chosen.token)} in orange (rank ${chosen.rank})`
+    : `· step ${S.an.position} (next token)`;
+  $("#entropyBar").style.width = (100 * d.entropy_bits / d.max_entropy_bits).toFixed(1) + "%";
+  $("#entropyText").textContent = `H = −Σ p log₂ p = ${d.entropy_bits.toFixed(3)} bits (max ${d.max_entropy_bits.toFixed(2)}) · 2^H = ${Math.pow(2, d.entropy_bits).toFixed(2)} effective choices`;
+  const m = d.topk_mass;
+  $("#massText").innerHTML = `top 5 tokens cover <b>${fmtPct(m[5] ?? m[1])}</b> of the probability mass<br>`
+    + Object.entries(m).map(([k, v]) => `top ${k}: ${fmtPct(v)}`).join(" · ");
+}
+
+// ---------------------------------------------------------------- internals
+let heatGeom = null;
+function renderAttention(it, body) {
+  body.innerHTML = `<canvas id="heat"></canvas><div class="stats" id="heatInfo"></div>
+    <h3>Mean attention distance of the current query, per head (tokens back)</h3><div class="stats" id="headDist"></div>
+    <h3>Residual-stream norm per position</h3><canvas id="normChart"></canvas>`;
+  const M = it.matrix, n = M.length, labels = it.labels, width = widthOf($("#panelInternals"));
+  const Lm = 46, Tm = 6, Bm = 46, Rm = 56, size = Math.min(width - Lm - Rm, 560), cell = size / n;
+  const cv = $("#heat"), ctx = setup(cv, Lm + size + Rm, Tm + size + Bm);
+  let max = 0; M.forEach(r => r.forEach(v => { if (v > max) max = v; }));
+  const sq = $("#sqrtScale").checked, scale = v => sq ? Math.sqrt(v / max) : v / max;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    ctx.fillStyle = j > i ? "#f1f2f4" : viridis(scale(M[i][j]));
+    ctx.fillRect(Lm + j * cell, Tm + i * cell, Math.ceil(cell), Math.ceil(cell));
+  }
+  ctx.strokeStyle = "#ea580c"; ctx.lineWidth = 1.5;
+  ctx.strokeRect(Lm, Tm + (n - 1) * cell, size, cell);
+  const every = Math.max(1, Math.ceil(11 / cell));
+  ctx.font = `${Math.min(11, Math.max(8, cell - 1))}px ${MONO}`;
+  ctx.fillStyle = "#111827";
+  for (let k = 0; k < n; k++) {
+    if (k % every && k !== n - 1) continue;
+    ctx.textAlign = "right"; ctx.fillText(show(labels[k]).slice(0, 4), Lm - 4, Tm + (k + 0.5) * cell + 3);
+    ctx.save(); ctx.translate(Lm + (k + 0.5) * cell + 3, Tm + size + 4); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "right"; ctx.fillText(show(labels[k]).slice(0, 4), 0, 0); ctx.restore();
+  }
+  ctx.fillStyle = "#6b7280"; ctx.font = "10px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("key (attended-to) position →", Lm + size / 2, Tm + size + Bm - 4);
+  ctx.save(); ctx.translate(9, Tm + size / 2); ctx.rotate(-Math.PI / 2); ctx.fillText("← query position", 0, 0); ctx.restore();
+  const cx = Lm + size + 14;
+  for (let k = 0; k < size; k++) { ctx.fillStyle = viridis(1 - k / size); ctx.fillRect(cx, Tm + k, 12, 1.5); }
+  ctx.fillStyle = "#374151"; ctx.textAlign = "left";
+  ctx.fillText(max.toFixed(3), cx + 15, Tm + 8); ctx.fillText((sq ? max / 4 : max / 2).toFixed(3), cx + 15, Tm + size / 2 + 3); ctx.fillText("0", cx + 15, Tm + size);
+  heatGeom = { Lm, Tm, cell, n, M, labels, start: S.an.window_start };
+  const hd = it.head === "mean" ? "mean over heads" : `head ${+it.head + 1}`;
+  $("#heatInfo").textContent = `layer ${it.layer + 1}, ${hd} · ${n}×${n} · grey triangle = causal mask · orange row = current query · ${sq ? "√ " : ""}colour scaled to max ${max.toFixed(3)}`;
+  $("#headDist").textContent = it.head_mean_distance.map((d, h) => `h${h + 1} ${d.toFixed(1)}`).join("  ");
+  lineChart($("#normChart"), width, 170, it.norms.map((v, k) => ({ name: it.norm_labels[k], values: v })),
+    { xlabel: "position in sequence", ylabel: "‖h‖", x0: S.an.window_start });
+  cv.onmousemove = heatHover; cv.onmouseleave = () => { $("#tip").style.display = "none"; };
+}
+function heatHover(e) {
+  const g = heatGeom, tip = $("#tip"), r = e.target.getBoundingClientRect();
+  const j = Math.floor((e.clientX - r.left - g.Lm) / g.cell), i = Math.floor((e.clientY - r.top - g.Tm) / g.cell);
+  if (i < 0 || j < 0 || i >= g.n || j >= g.n) { tip.style.display = "none"; return; }
+  tip.textContent = j > i ? "masked (future)" :
+    `query #${g.start + i} ${JSON.stringify(g.labels[i])}\nkey   #${g.start + j} ${JSON.stringify(g.labels[j])}\nweight ${g.M[i][j].toFixed(4)}`;
+  tip.style.left = e.clientX + 12 + "px"; tip.style.top = e.clientY + 12 + "px"; tip.style.display = "block";
+}
+
+function renderGates(it, body) {
+  body.innerHTML = ["forget", "input", "output"].map(g =>
+    `<h3>${g} gate · mean <span id="m_${g}"></span></h3><canvas id="g_${g}"></canvas>`).join("")
+    + `<div class="muted" style="font-size:11px">one bar per hidden unit (${it.hidden_size}) at the current position · height and colour = sigmoid activation (0–1)</div>
+       <h3>Gate means over the window</h3><canvas id="gateTime"></canvas>
+       <h3>Hidden-state norm per layer</h3><canvas id="normChart"></canvas>`;
+  const width = widthOf($("#panelInternals")), sorted = $("#sortUnits").checked;
+  for (const g of ["forget", "input", "output"]) {
+    const v = it.gates[g].slice(); if (sorted) v.sort((a, b) => a - b);
+    const ctx = setup($("#g_" + g), width, 64), L = 26, w = width - L - 4, h = 54, bw = w / v.length;
+    ctx.fillStyle = "#6b7280"; ctx.font = "10px system-ui"; ctx.textAlign = "right";
+    ctx.fillText("1", L - 4, 10); ctx.fillText("0", L - 4, h + 4);
+    ctx.strokeStyle = "#e5e7eb"; ctx.beginPath(); ctx.moveTo(L, 4 + h / 2); ctx.lineTo(L + w, 4 + h / 2); ctx.stroke();
+    v.forEach((x, k) => { ctx.fillStyle = viridis(x); ctx.fillRect(L + k * bw, 4 + h * (1 - x), Math.max(bw, 0.6), h * x); });
+    $("#m_" + g).textContent = it.gate_means[g].toFixed(3);
+  }
+  const gt = it.gate_means_over_time;
+  lineChart($("#gateTime"), width, 150, ["forget", "input", "output"].map((g, k) => ({ name: g, values: gt[g], color: PALETTE[k] })),
+    { xlabel: "position in sequence", ylabel: "mean", min: 0, max: 1, x0: S.an.window_start });
+  lineChart($("#normChart"), width, 160, it.norms.map((v, k) => ({ name: it.norm_labels[k], values: v })),
+    { xlabel: "position in sequence", ylabel: "‖h‖", x0: S.an.window_start });
+}
+
+function renderInternals() {
+  const it = S.an.internals;
+  $("#internalsTitle").textContent = it.kind === "attention" ? "Attention (query × key)" : `LSTM gates, layer ${it.layer + 1}`;
+  (it.kind === "attention" ? renderAttention : renderGates)(it, $("#internalsBody"));
+}
+
+// ---------------------------------------------------------------- loss
+function lossBars(cv, labels, losses, ppl, width) {
+  const height = 150, ctx = setup(cv, width, height);
+  if (!losses.length) { ctx.fillStyle = "#6b7280"; ctx.font = "11px system-ui"; ctx.fillText("nothing to show yet", 10, 20); return; }
+  const L = 40, R = 44, Tp = 10, B = 26, w = width - L - R, h = height - Tp - B, n = losses.length, bw = w / n;
+  const lmax = niceMax(Math.max(...losses)), pmax = niceMax(Math.max(...ppl));
+  ctx.font = "10px system-ui"; ctx.fillStyle = "#6b7280";
+  ctx.textAlign = "right"; ctx.fillText(lmax.toFixed(1), L - 4, Tp + 8); ctx.fillText("0", L - 4, Tp + h);
+  ctx.textAlign = "left"; ctx.fillStyle = "#ea580c"; ctx.fillText(pmax.toFixed(1), L + w + 4, Tp + 8); ctx.fillText("ppl", L + w + 4, Tp + h / 2);
+  losses.forEach((l, k) => { ctx.fillStyle = "#93c5fd"; ctx.fillRect(L + k * bw, Tp + h * (1 - l / lmax), Math.max(bw - (bw > 3 ? 1 : 0), 0.6), h * l / lmax); });
+  ctx.strokeStyle = "#ea580c"; ctx.lineWidth = 1.5; ctx.beginPath();
+  ppl.forEach((p, k) => { const x = L + (k + 0.5) * bw, y = Tp + h * (1 - p / pmax); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.stroke();
+  if (bw >= 9) {
+    ctx.fillStyle = "#111827"; ctx.font = "10px " + MONO; ctx.textAlign = "center";
+    labels.forEach((t, k) => ctx.fillText(show(t).slice(0, Math.max(1, Math.floor(bw / 6))), L + (k + 0.5) * bw, Tp + h + 12));
+  }
+  ctx.fillStyle = "#6b7280"; ctx.font = "10px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("bars: per-token cross-entropy (nats) · orange line: running perplexity", L + w / 2, height - 3);
+}
+function renderLoss() {
+  const gen = S.seq.tokens.filter(t => t.generated), width = widthOf($("#panelLoss"));
+  const losses = gen.map(t => t.loss); let tot = 0; const ppl = losses.map((l, k) => Math.exp((tot += l) / (k + 1)));
+  $("#genLossText").textContent = gen.length
+    ? `generated tokens, scored by the model at T = 1: mean loss ${(tot / gen.length).toFixed(3)} nats · perplexity ${ppl[ppl.length - 1].toFixed(2)}`
+    : "generated tokens: none yet";
+  lossBars($("#genLossCanvas"), gen.map(t => t.token), losses, ppl, width);
+  if (S.ref) {
+    const r = S.ref;
+    $("#refStats").textContent = `${r.tokens.length} tokens · mean loss ${r.mean_loss.toFixed(3)} nats · perplexity ${r.perplexity.toFixed(2)} · ${r.bits_per_char.toFixed(3)} bits/char`;
+    lossBars($("#refCanvas"), r.tokens, r.losses, r.running_perplexity, width);
+  } else { $("#refStats").textContent = ""; setup($("#refCanvas"), width, 1); }
+}
+
+// ---------------------------------------------------------------- actions
+function renderAll() { renderTokens(); renderDist(); renderInternals(); renderLoss(); }
+async function analyze() {
+  S.an = await api("/api/step", { position: S.view, temperature: T(), layer: S.layer, head: S.head });
+  renderAll();
+}
+async function stepOnce() {
+  const r = await api("/api/sample", { temperature: T() });
+  S.seq = r.state; S.view = r.sampled.position;
+  await analyze();
+}
+function stopPlay() { S.playing = false; $("#playBtn").textContent = "▶ Play"; }
+async function playLoop() {
+  while (S.playing) {
+    await run(stepOnce);
+    if (S.playing) await sleep(+$("#speed").value);
+  }
+}
+function fillSelectors() {
+  const info = S.info, ls = $("#layerSel"), hs = $("#headSel"), tf = info.model_type === "transformer";
+  ls.innerHTML = Array.from({ length: info.n_layers }, (_, i) => `<option value="${i}">${i + 1}</option>`).join("");
+  ls.value = String(tf ? info.n_layers - 1 : 0); S.layer = +ls.value;
+  $("#headWrap").style.display = tf ? "" : "none";
+  $("#sortWrap").style.display = tf ? "none" : "";
+  if (tf) hs.innerHTML = `<option value="mean">mean</option>` + Array.from({ length: info.n_heads }, (_, i) => `<option value="${i}">${i + 1}</option>`).join("");
+}
+async function exportEl(el, name) {
+  let canvas;
+  if (window.html2canvas) {
+    canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff",
+      ignoreElements: n => n.classList && n.classList.contains("noexport") });
+  } else {  // offline fallback: stack the panel's canvases
+    const cvs = [...el.querySelectorAll("canvas")].filter(c => c.height > DPR);
+    if (!cvs.length) throw new Error("html2canvas did not load (offline?) and this panel has no canvas");
+    canvas = document.createElement("canvas");
+    canvas.width = Math.max(...cvs.map(c => c.width)); canvas.height = cvs.reduce((s, c) => s + c.height, 0);
+    const ctx = canvas.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let y = 0; for (const c of cvs) { ctx.drawImage(c, 0, y); y += c.height; }
+  }
+  const a = document.createElement("a");
+  a.href = canvas.toDataURL("image/png"); a.download = `lmscope_${name}_step${S.view}.png`; a.click();
+}
+
+// ---------------------------------------------------------------- wiring
+$("#temp").oninput = () => { $("#tempVal").textContent = T().toFixed(2); };
+$("#temp").onchange = () => run(analyze);
+$("#speed").oninput = () => { $("#speedVal").textContent = $("#speed").value + "ms"; };
+$("#stepBtn").onclick = () => run(stepOnce);
+$("#playBtn").onclick = () => {
+  if (S.playing) return stopPlay();
+  S.playing = true; $("#playBtn").textContent = "⏸ Pause"; playLoop();
+};
+$("#resetBtn").onclick = () => { stopPlay(); run(async () => { S.seq = await api("/api/reset", {}); S.view = S.seq.length; await analyze(); }); };
+$("#setPrompt").onclick = () => { stopPlay(); run(async () => { S.seq = await api("/api/set-prompt", { prompt: $("#prompt").value }); S.view = S.seq.length; S.ref = null; await analyze(); }); };
+$("#layerSel").onchange = e => { S.layer = +e.target.value; run(analyze); };
+$("#headSel").onchange = e => { S.head = e.target.value; run(analyze); };
+$("#sortUnits").onchange = () => renderInternals();
+$("#sqrtScale").onchange = () => renderInternals();
+$("#scoreBtn").onclick = () => run(async () => { S.ref = await api("/api/score", { text: $("#refText").value }); renderLoss(); });
+$("#exportPage").onclick = () => run(() => exportEl(document.body, "page"));
+document.querySelectorAll("button.export").forEach(b => b.onclick = () =>
+  run(() => exportEl($("#" + b.dataset.panel), b.dataset.panel.replace("panel", "").toLowerCase())));
+let resizeTimer;
+window.onresize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => S.an && renderAll(), 150); };
+
+run(async () => {
+  const i = S.info = await api("/api/model-info");
+  $("#badge").textContent = `${i.model_type === "lstm" ? "LSTM" : "Transformer"} · ${(i.params / 1e6).toFixed(2)}M params · `
+    + `${i.n_layers} layers · ${i.tokenizer_type} tokenizer · vocab ${i.vocab_size} · ctx ${i.context_len} · ${i.device}`;
+  if (i.reference_text) $("#refText").value = i.reference_text.slice(0, 4000);
+  fillSelectors();
+  S.seq = await api("/api/state");
+  $("#prompt").value = S.seq.tokens.slice(0, S.seq.prompt_len).map(t => t.token).join("");
+  S.view = S.seq.length;
+  await analyze();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmscope"
+dynamic = ["version"]
+description = "Step through LSTM / Transformer language-model inference in the browser"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Michael" }]
+requires-python = ">=3.9"
+dependencies = ["flask>=2.0", "numpy", "torch>=2.0", "tokenizers>=0.13"]
+keywords = ["language model", "transformer", "lstm", "attention", "visualization", "interpretability"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ashurali/lmscope"
+Issues = "https://github.com/Ashurali/lmscope/issues"
+
+[project.scripts]
+lmscope = "lmscope.__main__:main"
+
+[tool.setuptools]
+packages = ["lmscope", "lmscope.static"]
+
+[tool.setuptools.dynamic]
+version = { attr = "lmscope.__version__" }
+
+[tool.setuptools.package-data]
+"lmscope.static" = ["*.html"]
